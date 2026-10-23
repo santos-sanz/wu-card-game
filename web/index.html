@@ -92,15 +92,11 @@
           <div class="mini-grid">
             <label class="field">
               <span>Attempts</span>
-              <input id="attempts" type="number" min="1" max="5" value="1">
+              <input id="attempts" type="number" min="1" max="5" value="2">
             </label>
             <label class="field">
-              <span>Beam</span>
-              <input id="beam" type="number" min="1" max="8" value="4">
-            </label>
-            <label class="field">
-              <span>Branch</span>
-              <input id="branching" type="number" min="1" max="5" value="2">
+              <span>Budget</span>
+              <input id="max-expansions" type="number" min="1" max="1000" value="120">
             </label>
             <label class="switch inline">
               <input type="checkbox" id="baseline">
@@ -129,7 +125,7 @@
           <div class="empty-state">
             <span class="eyebrow">No race yet</span>
             <h2>Set the table, pick two models, start the race.</h2>
-            <p>The text lane asks Nam for a full solution. The decisions lane asks OpenRouter for a move at every branch, while the harness does the arithmetic.</p>
+            <p>The text lane asks Nam for a full solution. The decisions lane asks OpenRouter to rank moves; the harness searches with exact pruning and does the arithmetic.</p>
           </div>
         </div>
 

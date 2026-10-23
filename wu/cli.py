@@ -77,8 +77,7 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
             text_model=args.text_model,
             decisions_model=args.decisions_model,
             text_max_attempts=args.text_max_attempts,
-            beam_width=args.beam_width,
-            branching=args.branching,
+            max_expansions=args.max_expansions,
             include_baseline=args.include_baseline,
             seed=args.seed,
             output_dir=args.output_dir,
@@ -86,6 +85,56 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
     )
     errors = [kind for kind, item in output["aggregate"].items() if item["errors"]]
     return 0 if not errors else 0
+
+
+def cmd_stress(args: argparse.Namespace) -> int:
+    from .benchmark import run_benchmark
+
+    hand = sorted(args.hand)
+    reference = solve(hand, args.target, Rules())
+    if reference is None:
+        print(f"hand {hand} target {args.target} is unsolvable; nothing to stress", file=sys.stderr)
+        return 2
+    records = [
+        {
+            "id": f"stress-{index + 1:03d}",
+            "hand": hand,
+            "target": args.target,
+            "rules": Rules().to_dict(),
+            "solvable": True,
+            "steps": len(reference),
+            "solution": [step.to_dict() for step in reference],
+        }
+        for index in range(args.runs)
+    ]
+    print(f"stress: {args.runs} repeated solvable hands {hand} target={args.target}")
+    output = asyncio.run(
+        run_benchmark(
+            records,
+            text_model=args.text_model,
+            decisions_model=args.decisions_model,
+            text_max_attempts=args.text_max_attempts,
+            max_expansions=args.max_expansions,
+            include_baseline=args.include_baseline,
+            seed=args.seed,
+            output_dir=args.output_dir,
+        )
+    )
+    aggregate = output["aggregate"]
+    text_ok = aggregate["text"]["solved"] == args.runs and aggregate["text"]["errors"] == 0
+    decisions_ok = (
+        aggregate["decisions"]["solved"] == args.runs and aggregate["decisions"]["errors"] == 0
+    )
+    print()
+    print(f"text:      {aggregate['text']['solved']}/{args.runs} solved, "
+          f"median {aggregate['text']['median_solved_ms']} ms")
+    print(f"decisions: {aggregate['decisions']['solved']}/{args.runs} solved, "
+          f"median {aggregate['decisions']['median_solved_ms']} ms")
+    if text_ok and decisions_ok:
+        print("STRESS PASS")
+        return 0
+    print("STRESS FAIL")
+    return 1
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
@@ -130,13 +179,25 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--limit", type=int, default=None)
     benchmark.add_argument("--text-model", default=config.DEFAULT_TEXT_MODEL)
     benchmark.add_argument("--decisions-model", default=config.DEFAULT_DECISIONS_MODEL)
-    benchmark.add_argument("--text-max-attempts", type=int, default=1)
-    benchmark.add_argument("--beam-width", type=int, default=4)
-    benchmark.add_argument("--branching", type=int, default=2)
+    benchmark.add_argument("--text-max-attempts", type=int, default=2)
+    benchmark.add_argument("--max-expansions", type=int, default=120)
     benchmark.add_argument("--include-baseline", action="store_true")
     benchmark.add_argument("--seed", type=int, default=7)
     benchmark.add_argument("--output-dir", type=Path, default=config.RESULTS_DIR)
     benchmark.set_defaults(func=cmd_benchmark)
+
+    stress = sub.add_parser("stress", help="repeatedly verify both lanes on a solvable hand")
+    stress.add_argument("--runs", type=int, default=3)
+    stress.add_argument("--hand", type=_parse_hand, default=[2, 8, 9, 3, 12, 12])
+    stress.add_argument("--target", type=int, default=config.DEFAULT_TARGET)
+    stress.add_argument("--text-model", default=config.DEFAULT_TEXT_MODEL)
+    stress.add_argument("--decisions-model", default=config.DEFAULT_DECISIONS_MODEL)
+    stress.add_argument("--text-max-attempts", type=int, default=2)
+    stress.add_argument("--max-expansions", type=int, default=120)
+    stress.add_argument("--include-baseline", action="store_true")
+    stress.add_argument("--seed", type=int, default=11)
+    stress.add_argument("--output-dir", type=Path, default=config.RESULTS_DIR)
+    stress.set_defaults(func=cmd_stress)
     return parser
 
 

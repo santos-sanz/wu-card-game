@@ -38,9 +38,8 @@ class RaceRequest(BaseModel):
     rules: dict[str, Any] | None = None
     text_model: str = config.DEFAULT_TEXT_MODEL
     decisions_model: str = config.DEFAULT_DECISIONS_MODEL
-    text_max_attempts: int = 1
-    beam_width: int = 4
-    branching: int = 2
+    text_max_attempts: int = 2
+    max_expansions: int = 120
     include_baseline: bool = False
     seed: int = 0
 
@@ -106,9 +105,8 @@ async def bootstrap() -> dict[str, Any]:
             "text_model": config.DEFAULT_TEXT_MODEL,
             "decisions_model": config.DEFAULT_DECISIONS_MODEL,
             "rules": Rules().to_dict(),
-            "text_max_attempts": 1,
-            "beam_width": 4,
-            "branching": 2,
+            "text_max_attempts": 2,
+            "max_expansions": 120,
             "include_baseline": False,
         },
         "samples": [

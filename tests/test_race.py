@@ -42,8 +42,7 @@ async def test_full_race_with_heuristic_decisions(monkeypatch) -> None:
             "decisions_model": "harness/heuristic",
             "text_model": "fake-text",
             "text_max_attempts": 1,
-            "beam_width": 4,
-            "branching": 2,
+            "max_expansions": 120,
             "include_baseline": False,
             "seed": 4,
         }

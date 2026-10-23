@@ -8,7 +8,7 @@ import pytest
 from wu.clients import DecisionsCall
 from wu.game import Rules, solve
 from wu.models import RaceConfig, new_lane
-from wu.runners import OpenRouterPolicy, run_decisions_lane
+from wu.runners import HeuristicPolicy, OpenRouterPolicy, run_decisions_lane
 
 
 class OracleDecisionsClient:
@@ -69,8 +69,7 @@ async def test_decisions_lane_solves_with_oracle_policy() -> None:
             "hand": [2, 8, 9, 3, 12, 12],
             "target": 163,
             "decisions_model": "fake/decisions",
-            "beam_width": 4,
-            "branching": 2,
+            "max_expansions": 120,
         }
     )
     lane = new_lane("decisions", config.decisions_model, "OpenRouter")
@@ -80,3 +79,21 @@ async def test_decisions_lane_solves_with_oracle_policy() -> None:
     assert lane["calls"] == 5
     assert client.calls == 5
     assert lane["verification"]["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_guided_search_solves_with_weak_heuristic_policy() -> None:
+    config = RaceConfig.from_dict(
+        {
+            "hand": [2, 8, 9, 3, 12, 12],
+            "target": 163,
+            "decisions_model": "harness/heuristic",
+            "max_expansions": 120,
+        }
+    )
+    lane = new_lane("baseline", config.decisions_model, "Harness")
+    await run_decisions_lane(config, lane, HeuristicPolicy(), source="baseline")
+    assert lane["status"] == "solved", lane.get("verification")
+    assert lane["verification"]["ok"] is True
+    assert lane["solution"]["steps"]
+    assert lane["calls"] == 0

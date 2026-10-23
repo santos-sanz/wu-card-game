@@ -235,8 +235,7 @@ function setDefaults(data) {
   $("#must-use-all").checked = defaults.rules.must_use_all;
   $("#integer-only").checked = defaults.rules.integer_only;
   $("#attempts").value = defaults.text_max_attempts;
-  $("#beam").value = defaults.beam_width;
-  $("#branching").value = defaults.branching;
+  $("#max-expansions").value = defaults.max_expansions;
   $("#baseline").checked = !!defaults.include_baseline;
   state.hand = defaults.hand.slice();
   state.target = defaults.target;
@@ -307,7 +306,7 @@ function progressFor(lane, race) {
   if (lane.status === "solved") return 100;
   if (lane.status === "unsolved" || lane.status === "error") return 100;
   if (lane.kind === "text") return 55;
-  const stepsDone = lane.beam && lane.beam.length ? lane.beam[0].history.length : 0;
+  const stepsDone = lane.beam && lane.beam.length ? Math.max(...lane.beam.map((item) => item.history.length)) : 0;
   const total = Math.max(1, (race.config.hand.length || 6) - 1);
   return Math.min(92, Math.max(10, (stepsDone / total) * 100));
 }
@@ -576,9 +575,8 @@ async function startRace() {
     rules: rulesFromControls(),
     text_model: $("#text-model").value,
     decisions_model: $("#decisions-model").value,
-    text_max_attempts: Number($("#attempts").value) || 1,
-    beam_width: Number($("#beam").value) || 4,
-    branching: Number($("#branching").value) || 2,
+    text_max_attempts: Number($("#attempts").value) || 2,
+    max_expansions: Number($("#max-expansions").value) || 120,
     include_baseline: $("#baseline").checked,
     seed: Math.floor(Math.random() * 1_000_000),
   };

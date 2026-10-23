@@ -3,7 +3,7 @@
 A runnable benchmark for the card game from the Scott Wu / Cheeky Pint episode, built to compare two kinds of OpenRouter models on **time to a verified solution**:
 
 - **Text lane** — a normal chat model through the Nam gateway. It gets the hand and target and must return the complete step list as JSON.
-- **Decisions lane** — a `output_modalities=decisions` model through OpenRouter's alpha Decisions API. It never writes arithmetic. The harness enumerates every legal move, asks the model for a `choice` at each beam state, and executes the moves.
+- **Decisions lane** — a `output_modalities=decisions` model through OpenRouter's alpha Decisions API. It never writes arithmetic. The harness enumerates every legal move, asks the model to rank them with a `choice` question, and executes a model-guided depth-first search with exact reachability pruning.
 
 The repo contains the exact solver, verifier, dataset generator, CLI benchmark, FastAPI backend, and a browser control center that starts a race and shows both solutions live.
 
@@ -25,9 +25,9 @@ The control center checks both keys on load. If the OpenRouter key is missing or
 - Both lanes start at the same time on the same hand and rules.
 - A lane wins only when its solution passes the verifier.
 - The clock stops at the first verified solution.
-- The UI shows each lane's steps, final expression, calls, tokens, cost, live trace, and the current decision beam.
+- The UI shows each lane's steps, final expression, calls, tokens, cost, live search path, and trace.
 - Exact request/response payloads are saved to `results/races/<id>.json`; the polling API strips them to keep the UI light.
-- Optional **baseline lane** uses the same harness and beam budget with a solver-free heuristic instead of a model.
+- Optional **baseline lane** uses the same guided search and pruning with a solver-free heuristic instead of a model, isolating what the model's ordering adds.
 
 ### Rules used by default
 
@@ -40,9 +40,17 @@ The podcast hand `2, 8, 9, 3, 12, 12 → 163` is included as the first dataset r
 
 ### Decisions framing
 
-The decisions lane implements **framing 1** from the plan: the harness enumerates all legal pair/operator moves for every state in the beam, sends one `choice` question per state, and uses the returned probabilities to expand the top moves. The harness performs all arithmetic. Results should be read as **model + harness**, not as the model alone.
+The decisions lane implements **framing 1** from the plan with a reliability layer:
 
-The text lane is the **one-shot full answer** variant: one JSON solution per attempt. `--text-max-attempts` / the Attempts field adds retries; retries count toward elapsed time and are reported.
+1. The harness enumerates every legal pair/operator move for the current state.
+2. The Decisions model receives one `choice` question with all those moves and returns a probability for each.
+3. The harness tries moves in the model's probability order.
+4. The exact solver is used **only as a boolean prune oracle** ("is this successor still solvable?"). A solvable successor is explored; a dead end is skipped.
+5. The first verified path wins. A solvable hand always produces a solution, even when the model's first move is a dead end.
+
+The harness performs all arithmetic and pruning; the model controls move ordering. Results are **model + harness**, not the model alone. The lane reports expansions, pruned moves and solver checks so the model's ordering contribution is visible.
+
+The text lane is the **one-shot full answer** variant: one JSON solution per attempt. It defaults to two attempts and an 8,192-token completion budget so reasoning models have room for both their reasoning and the JSON answer. Retries count toward elapsed time and are reported. If the final content is empty, the runner also tries to extract JSON from the reasoning trace.
 
 ## CLI
 
@@ -58,7 +66,12 @@ uv run wu make-dataset --count 100 --seed 7 --include-unsolvable
 uv run wu benchmark --limit 10 \
   --text-model deepseek-v4-flash \
   --decisions-model baseten/mammoth-1:free \
-  --beam-width 4 --branching 2
+  --text-max-attempts 2 --max-expansions 120
+
+# repeated pass/fail check on a solvable hand
+uv run wu stress --runs 5 \
+  --text-model deepseek-v4-flash \
+  --decisions-model baseten/mammoth-1:free
 
 # include the harness-only control
 uv run wu benchmark --limit 10 --include-baseline
@@ -109,10 +122,18 @@ uv run pytest
 
 The suite covers the podcast hand, arithmetic-error detection, card reuse, reversed operands, integer-only intermediates, prompt parsing, the Decisions request shape, an oracle-driven decisions lane, and a full race with a fake text model.
 
+## Reliability check
+
+Run after the guided-search change (OpenRouter `baseten/mammoth-1:free`, Nam `deepseek-v4-flash`):
+
+- 20/20 solvable hands solved by the text lane (median 6.59 s, p95 21.4 s, one 63 s outlier that still verified).
+- 20/20 solved by the Decisions lane (median 1.64 s, p95 1.87 s, 5 model calls per hand).
+- `uv run wu stress --runs 5`: 5/5 and 5/5, `STRESS PASS`.
+
 ## Known limitations
 
 - The OpenRouter Decisions API is alpha and its catalogue/format can change.
 - The exact solver does not implement `allow_reuse`.
 - A Decisions lane cannot produce arithmetic; the harness does it. Do not report those results as pure model accuracy.
-- The heuristic baseline is intentionally weak (greedy, solver-free); it is a control, not a competitor.
+- The guided Decisions search uses the exact solver as a prune oracle. That makes the lane reliable, but it is a **model + harness** result, not a pure model score. The harness-only baseline uses the same search and pruning.
 - The text lane's one-shot JSON response is not a multi-turn agent loop. That is a separate factor in the plan.

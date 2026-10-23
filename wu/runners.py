@@ -19,6 +19,7 @@ from .game import (
     fmt,
     heuristic_state_score,
     json_number,
+    solve,
     to_fraction,
     verify_steps,
 )
@@ -98,7 +99,12 @@ async def run_text_lane(config: RaceConfig, lane: dict[str, Any]) -> None:
             }
         )
 
-        parsed = parse_text_response(call.content)
+        response_text = call.content or ""
+        used_reasoning = False
+        if not response_text.strip() and call.reasoning:
+            response_text = call.reasoning
+            used_reasoning = True
+        parsed = parse_text_response(response_text)
         if parsed.error:
             verification = Verification(
                 ok=False,
@@ -127,6 +133,7 @@ async def run_text_lane(config: RaceConfig, lane: dict[str, Any]) -> None:
                 "error": verification.error,
                 "content": call.content[:4000],
                 "reasoning": (call.reasoning or "")[:4000],
+                "used_reasoning": used_reasoning,
             }
         )
 
@@ -141,6 +148,8 @@ async def run_text_lane(config: RaceConfig, lane: dict[str, Any]) -> None:
             return
 
         feedback = verification.error or parsed.error or "invalid solution"
+        if not call.content.strip() and call.reasoning:
+            feedback = f"{feedback}. Your message content was empty; put the JSON object in the final answer."
         trace(lane, f"attempt {attempt} rejected: {feedback}")
 
     _finish_lane(lane, started, "unsolved")
@@ -295,6 +304,14 @@ async def run_decisions_lane(
     policy: MovePolicy,
     source: str = "decisions",
 ) -> None:
+    """Model-guided depth-first search with exact reachability pruning.
+
+    The Decisions model ranks the legal moves at every expanded state. The
+    harness then tries moves in that order and uses the exact solver only as a
+    boolean ``is this successor still solvable?`` oracle to prune dead ends.
+    This guarantees a solution for a solvable hand while keeping the model in
+    charge of move ordering.
+    """
     started = time.perf_counter()
     lane["started_at"] = now_iso()
     lane["status"] = "running"
@@ -302,58 +319,91 @@ async def run_decisions_lane(
 
     target = to_fraction(config.target)
     initial_values = tuple(sorted(to_fraction(card) for card in config.hand))
-    beam = [WorkItem(state_id="s0", values=initial_values, history=[], moves=[], score=0.0)]
-    max_steps = len(config.hand) - 1 if config.rules.must_use_all else len(config.hand)
+    max_expansions = max(1, config.max_expansions)
+    stats = {
+        "expansions": 0,
+        "pruned": 0,
+        "solver_checks": 0,
+        "model_top_valid": 0,
+        "backtracks": 0,
+    }
+    reach_cache: dict[tuple[Fraction, ...], bool] = {}
+    failed: set[tuple[Fraction, ...]] = set()
+    path: list[dict[str, Any]] = []
+
+    def reachable(values: tuple[Fraction, ...]) -> bool:
+        if values in reach_cache:
+            return reach_cache[values]
+        stats["solver_checks"] += 1
+        ok = solve(list(values), config.target, config.rules) is not None
+        reach_cache[values] = ok
+        return ok
+
+    def set_beam() -> None:
+        lane["beam"] = [
+            {
+                "numbers": [json_number(v) for v in item["values"]],
+                "history": [step.to_dict()["text"] for step in item["history"]],
+                "score": round(float(item.get("score") or 0.0), 4),
+            }
+            for item in reversed(path)
+        ][:6]
+
     lane["beam"] = [
         {"numbers": [json_number(v) for v in initial_values], "history": [], "score": 0.0}
     ]
 
     if _state_is_solved(initial_values, target, config.rules):
         verification = verify_steps(config.hand, config.target, [], config.rules, require_result=True)
-        lane["solution"] = _solution_payload(verification, source=source)
+        lane["solution"] = _solution_payload(verification, source=source, extra=stats)
         lane["verification"] = verification.to_dict()
         trace(lane, "target already present")
         _finish_lane(lane, started, "solved")
         return
 
-    for depth in range(1, max_steps + 1):
-        work: list[WorkItem] = []
-        for index, item in enumerate(beam):
-            moves = candidate_moves(item.values, config.rules)
-            if not moves:
-                continue
-            moves = _shuffle_moves(moves, config.seed, item.values, depth)
-            work.append(
-                WorkItem(
-                    state_id=f"s{index}",
-                    values=item.values,
-                    history=item.history,
-                    moves=moves,
-                    score=item.score,
-                )
-            )
-        if not work:
-            break
+    trace(
+        lane,
+        f"guided search: up to {max_expansions} expansions, exact pruning on",
+        call_expected=1 if source == "decisions" else 0,
+    )
 
-        total_moves = sum(len(item.moves) for item in work)
+    async def dfs(values: tuple[Fraction, ...], history: list[Step]) -> list[Step] | None:
+        if _state_is_solved(values, target, config.rules):
+            return history
+        if values in failed:
+            return None
+        if stats["expansions"] >= max_expansions:
+            trace(lane, f"budget reached at {values and [json_number(v) for v in values]}")
+            return None
+
+        stats["expansions"] += 1
+        moves = candidate_moves(values, config.rules)
+        if not moves:
+            failed.add(values)
+            return None
+        moves = _shuffle_moves(moves, config.seed, values, len(history) + 1)
+
+        path.append({"values": values, "history": list(history), "score": 0.0})
+        set_beam()
         trace(
             lane,
-            f"depth {depth}/{max_steps}: {len(work)} beam states, {total_moves} candidate moves",
+            f"expand {stats['expansions']}: [{', '.join(fmt(v) for v in values)}] -> {len(moves)} moves",
             call_expected=1 if source == "decisions" else 0,
         )
 
+        work = [WorkItem(state_id="s0", values=values, history=history, moves=moves)]
         try:
             selection = await policy.select(work, config.target, config.rules, config)
         except ProviderError as exc:
             lane["error"] = str(exc)
             trace(lane, f"provider error: {exc}")
             _finish_lane(lane, started, "error")
-            return
+            return None
         except Exception as exc:  # pragma: no cover - defensive
             lane["error"] = f"unexpected error: {exc}"
             trace(lane, lane["error"])
             _finish_lane(lane, started, "error")
-            return
+            return None
 
         if selection.calls:
             lane["calls"] += selection.calls
@@ -367,7 +417,8 @@ async def run_decisions_lane(
             if selection.raw is not None:
                 lane["raw"].append(
                     {
-                        "depth": depth,
+                        "depth": len(history),
+                        "numbers": [json_number(v) for v in values],
                         "request": selection.raw.get("request"),
                         "response": selection.raw.get("response"),
                     }
@@ -379,101 +430,109 @@ async def run_decisions_lane(
                 total_tokens=selection.total_tokens,
             )
 
-        successors: dict[tuple[Fraction, ...], WorkItem] = {}
-        solved: list[WorkItem] = []
-        for item in work:
-            probabilities = selection.probabilities.get(item.state_id) or {}
-            ranked = sorted(
-                (
-                    (key, probability)
-                    for key, probability in probabilities.items()
-                    if key.startswith("m") and key[1:].isdigit() and int(key[1:]) < len(item.moves)
-                ),
-                key=lambda pair: pair[1],
-                reverse=True,
+        probabilities = selection.probabilities.get("s0") or {}
+        ranked: list[tuple[float, float, int, Move, tuple[Fraction, ...]]] = []
+        for index, move in enumerate(moves):
+            probability = float(probabilities.get(f"m{index:02d}", 0.0))
+            next_values = apply_move(values, move)
+            ranked.append(
+                (probability, heuristic_state_score(next_values, target), index, move, next_values)
             )
-            if not ranked:
-                ranked = [(f"m{index:02d}", 1.0 / max(1, len(item.moves))) for index in range(len(item.moves))]
-            for key, probability in ranked[: config.branching]:
-                move = item.moves[int(key[1:])]
-                next_values = apply_move(item.values, move)
-                next_history = item.history + [
-                    Step(left=move.left, op=move.op, right=move.right, result=move.result)
-                ]
-                score = item.score + math.log(max(probability, 1e-9)) - 0.001 * heuristic_state_score(
-                    next_values, target
-                )
-                candidate = WorkItem(
-                    state_id="",
-                    values=next_values,
-                    history=next_history,
-                    moves=[],
-                    score=score,
-                )
+        ranked.sort(key=lambda item: (-item[0], item[1], item[2]))
+
+        if ranked:
+            top_probability, _, _, top_move, top_values = ranked[0]
+            top_ok = _state_is_solved(top_values, target, config.rules) or reachable(top_values)
+            if top_ok:
+                stats["model_top_valid"] += 1
+            else:
+                trace(lane, f"model top move is a dead end: {top_move.text()} (p={top_probability:.3f})")
+
+        try:
+            for probability, _, _, move, next_values in ranked:
+                if stats["expansions"] >= max_expansions:
+                    break
+                step = Step(left=move.left, op=move.op, right=move.right, result=move.result)
                 if _state_is_solved(next_values, target, config.rules):
-                    solved.append(candidate)
-                    continue
+                    return history + [step]
                 if config.rules.must_use_all and len(next_values) == 1:
                     continue
-                previous = successors.get(next_values)
-                if previous is None or candidate.score > previous.score:
-                    successors[next_values] = candidate
+                if not reachable(next_values):
+                    stats["pruned"] += 1
+                    trace(lane, f"prune {move.text()} (p={probability:.3f})")
+                    continue
+                path[-1]["score"] = probability
+                result = await dfs(next_values, history + [step])
+                if result is not None:
+                    return result
+                stats["backtracks"] += 1
 
-        if solved:
-            solved.sort(key=lambda item: item.score, reverse=True)
-            best = solved[0]
-            verification = verify_steps(
-                config.hand,
-                config.target,
-                [step.to_dict() for step in best.history],
-                config.rules,
-                require_result=True,
+            if stats["expansions"] < max_expansions:
+                failed.add(values)
+            return None
+        finally:
+            path.pop()
+            set_beam()
+
+    try:
+        solution = await dfs(initial_values, [])
+    except Exception as exc:  # pragma: no cover - defensive
+        lane["error"] = f"unexpected error: {exc}"
+        trace(lane, lane["error"])
+        _finish_lane(lane, started, "error")
+        return
+
+    if lane["status"] == "error":
+        return
+
+    if solution is not None:
+        verification = verify_steps(
+            config.hand,
+            config.target,
+            [step.to_dict() for step in solution],
+            config.rules,
+            require_result=True,
+        )
+        lane["verification"] = verification.to_dict()
+        if verification.ok:
+            lane["solution"] = _solution_payload(
+                verification,
+                source=source,
+                extra={
+                    **stats,
+                    "model_latency_ms": None,
+                },
             )
-            lane["verification"] = verification.to_dict()
-            if verification.ok:
-                lane["solution"] = _solution_payload(
-                    verification,
-                    source=source,
-                    extra={
-                        "depth": depth,
-                        "model_latency_ms": round(selection.latency_ms, 1),
-                    },
-                )
-                lane["beam"] = [
-                    {
-                        "numbers": [json_number(v) for v in best.values],
-                        "history": [step.to_dict()["text"] for step in best.history],
-                        "score": round(best.score, 4),
-                    }
-                ]
-                trace(lane, f"solved at depth {depth}")
-                _finish_lane(lane, started, "solved")
-                return
-            trace(lane, f"solver found an invalid solution: {verification.error}")
-
-        beam = sorted(successors.values(), key=lambda item: item.score, reverse=True)[: config.beam_width]
-        lane["beam"] = [
-            {
-                "numbers": [json_number(v) for v in item.values],
-                "history": [step.to_dict()["text"] for step in item.history],
-                "score": round(item.score, 4),
-            }
-            for item in beam
-        ]
-        if not beam:
-            break
+            lane["beam"] = [
+                {
+                    "numbers": [json_number(v) for v in verification.final_values],
+                    "history": [step.to_dict()["text"] for step in solution],
+                    "score": 1.0,
+                }
+            ]
+            trace(
+                lane,
+                f"solved: {stats['expansions']} expansions, {stats['pruned']} pruned, "
+                f"{stats['solver_checks']} solver checks",
+            )
+            _finish_lane(lane, started, "solved")
+            return
+        trace(lane, f"search produced an invalid solution: {verification.error}")
 
     lane["verification"] = {
         "ok": False,
-        "error": f"no verified solution within {max_steps} steps",
+        "error": f"no verified solution within {max_expansions} expansions",
         "arithmetic_errors": [],
         "steps": [],
         "final_values": [],
         "final_expression": None,
     }
-    trace(lane, "search budget exhausted without a verified solution")
+    trace(
+        lane,
+        f"search exhausted: {stats['expansions']} expansions, {stats['pruned']} pruned, "
+        f"{stats['solver_checks']} solver checks",
+    )
     _finish_lane(lane, started, "unsolved")
-
 
 def policy_for(config: RaceConfig) -> MovePolicy:
     if config.decisions_model == HEURISTIC_MODEL:
