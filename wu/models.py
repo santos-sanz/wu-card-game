@@ -19,9 +19,8 @@ class RaceConfig:
     rules: Rules = field(default_factory=Rules)
     text_model: str = DEFAULT_TEXT_MODEL
     decisions_model: str = DEFAULT_DECISIONS_MODEL
-    text_max_attempts: int = 1
-    beam_width: int = 4
-    branching: int = 2
+    text_max_attempts: int = 2
+    max_expansions: int = 120
     include_baseline: bool = False
     seed: int = 0
 
@@ -39,15 +38,12 @@ class RaceConfig:
         target = int(data.get("target", DEFAULT_TARGET))
         if target <= 0:
             raise ValueError("target must be positive")
-        attempts = int(data.get("text_max_attempts", 1))
+        attempts = int(data.get("text_max_attempts", 2))
         if not (1 <= attempts <= 5):
             raise ValueError("text_max_attempts must be between 1 and 5")
-        beam_width = int(data.get("beam_width", 4))
-        if not (1 <= beam_width <= 8):
-            raise ValueError("beam_width must be between 1 and 8")
-        branching = int(data.get("branching", 2))
-        if not (1 <= branching <= 5):
-            raise ValueError("branching must be between 1 and 5")
+        max_expansions = int(data.get("max_expansions", 120))
+        if not (1 <= max_expansions <= 1000):
+            raise ValueError("max_expansions must be between 1 and 1000")
         return cls(
             hand=sorted(cards),
             target=target,
@@ -55,8 +51,7 @@ class RaceConfig:
             text_model=str(data.get("text_model") or DEFAULT_TEXT_MODEL),
             decisions_model=str(data.get("decisions_model") or DEFAULT_DECISIONS_MODEL),
             text_max_attempts=attempts,
-            beam_width=beam_width,
-            branching=branching,
+            max_expansions=max_expansions,
             include_baseline=bool(data.get("include_baseline", False)),
             seed=int(data.get("seed", 0)),
         )
@@ -69,8 +64,7 @@ class RaceConfig:
             "text_model": self.text_model,
             "decisions_model": self.decisions_model,
             "text_max_attempts": self.text_max_attempts,
-            "beam_width": self.beam_width,
-            "branching": self.branching,
+            "max_expansions": self.max_expansions,
             "include_baseline": self.include_baseline,
             "seed": self.seed,
         }

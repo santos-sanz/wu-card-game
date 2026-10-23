@@ -339,7 +339,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .switch input:checked::after { transform: translateX(13px); background: var(--amber); }
 .switch.inline { padding: 0; align-self: end; height: 36px; }
 
-.mini-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; align-items: end; }
+.mini-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 10px; align-items: end; }
 .mini-grid .switch { grid-column: 1 / -1; }
 
 .hint { color: var(--muted-2); font-size: 10.5px; line-height: 1.5; margin-top: 11px; }

@@ -81,7 +81,7 @@ class NamClient:
         self,
         model: str,
         messages: list[dict[str, str]],
-        max_tokens: int = 1600,
+        max_tokens: int = 8192,
         temperature: float = 0.0,
         timeout: float = 180.0,
     ) -> TextCall:
