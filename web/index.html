@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WU // Race Control</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">WU</span>
+        <div class="brand-copy">
+          <h1>Race Control</h1>
+          <p>Decisions vs Text · six cards · one target</p>
+        </div>
+      </div>
+      <div class="status-strip">
+        <div class="key-status" id="key-nam">
+          <span class="status-dot"></span>
+          <div><strong>Nam</strong><span>checking…</span></div>
+        </div>
+        <div class="key-status" id="key-openrouter">
+          <span class="status-dot"></span>
+          <div><strong>OpenRouter</strong><span>checking…</span></div>
+        </div>
+        <div class="dataset-status" id="dataset-status">dataset · 0 hands</div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <section class="panel controls">
+          <div class="section-head">
+            <div>
+              <span class="eyebrow">Table setup</span>
+              <h2>Hand &amp; target</h2>
+            </div>
+            <button id="deal-solvable" class="ghost small">Deal solvable</button>
+          </div>
+
+          <div class="cards" id="cards"></div>
+
+          <div class="target-row">
+            <label class="field">
+              <span>Target</span>
+              <input id="target" type="number" min="1" value="163">
+            </label>
+            <button id="podcast" class="ghost">Podcast hand</button>
+          </div>
+
+          <div class="ground-truth" id="ground-truth">
+            <span class="eyebrow">Exact solver</span>
+            <div class="gt-line"><span class="spinner tiny"></span> analyzing…</div>
+          </div>
+        </section>
+
+        <section class="panel controls compact">
+          <div class="section-head">
+            <div>
+              <span class="eyebrow">Rules</span>
+              <h2>Variant</h2>
+            </div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="must-use-all" checked>
+            <span>Use every card exactly once</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="integer-only" checked>
+            <span>Integer intermediates only</span>
+          </label>
+          <p class="hint">Division must be exact when integer mode is on.</p>
+        </section>
+
+        <section class="panel controls compact">
+          <div class="section-head">
+            <div>
+              <span class="eyebrow">Contenders</span>
+              <h2>Models</h2>
+            </div>
+          </div>
+          <label class="field">
+            <span>Text · Nam</span>
+            <select id="text-model"></select>
+          </label>
+          <label class="field">
+            <span>Decisions · OpenRouter</span>
+            <select id="decisions-model"></select>
+          </label>
+          <div class="mini-grid">
+            <label class="field">
+              <span>Attempts</span>
+              <input id="attempts" type="number" min="1" max="5" value="1">
+            </label>
+            <label class="field">
+              <span>Beam</span>
+              <input id="beam" type="number" min="1" max="8" value="4">
+            </label>
+            <label class="field">
+              <span>Branch</span>
+              <input id="branching" type="number" min="1" max="5" value="2">
+            </label>
+            <label class="switch inline">
+              <input type="checkbox" id="baseline">
+              <span>Baseline lane</span>
+            </label>
+          </div>
+        </section>
+
+        <div class="actions">
+          <button id="start" class="start">Start race</button>
+          <button id="cancel" class="cancel" disabled>Cancel</button>
+        </div>
+        <p class="hint" id="hint">Both lanes run concurrently. Time is measured to the first verified solution.</p>
+      </aside>
+
+      <section class="arena">
+        <div class="race-head panel">
+          <div>
+            <span class="eyebrow">Current race</span>
+            <div class="race-hand" id="race-hand">2 · 8 · 9 · 3 · 12 · 12 → 163</div>
+          </div>
+          <div class="race-clock" id="race-clock" data-started-at="" data-elapsed-ms="">00:00.000</div>
+        </div>
+
+        <div class="lanes" id="lanes">
+          <div class="empty-state">
+            <span class="eyebrow">No race yet</span>
+            <h2>Set the table, pick two models, start the race.</h2>
+            <p>The text lane asks Nam for a full solution. The decisions lane asks OpenRouter for a move at every branch, while the harness does the arithmetic.</p>
+          </div>
+        </div>
+
+        <div class="compare" id="compare"></div>
+
+        <div class="lower">
+          <section class="panel log-panel">
+            <div class="section-head">
+              <div><span class="eyebrow">Live feed</span><h2>Event log</h2></div>
+            </div>
+            <div class="event-log" id="event-log"><p class="muted">Waiting for a race…</p></div>
+          </section>
+          <section class="panel history-panel">
+            <div class="section-head">
+              <div><span class="eyebrow">Archive</span><h2>Recent races</h2></div>
+              <button id="refresh-history" class="ghost tiny">Refresh</button>
+            </div>
+            <div class="history" id="history"><p class="muted">No saved races.</p></div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
