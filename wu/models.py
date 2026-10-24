@@ -89,4 +89,5 @@ def new_lane(kind: str, model: str, provider: str) -> dict[str, Any]:
         "trace": [],
         "raw": [],
         "beam": [],
+        "live_steps": [],
     }

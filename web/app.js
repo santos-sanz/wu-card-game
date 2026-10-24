@@ -8,6 +8,8 @@ const state = {
   analyzeTimer: null,
   analyzeSeq: 0,
   history: [],
+  laneViews: {},
+  laneSignature: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -131,12 +133,18 @@ function rulesFromControls() {
 function renderCards() {
   const container = $("#cards");
   container.innerHTML = state.hand
-    .map(
-      (value, index) => `
-      <div class="card">
+    .map((value, index) => {
+      const suit = SUITS[index % SUITS.length];
+      const ink = RED_SUITS.has(suit) ? "red" : "black";
+      const rank = pokerRank(value);
+      return `
+      <div class="card ${ink}">
+        <span class="card-watermark">${suit}</span>
+        <span class="card-corner top"><b>${escapeHtml(rank)}</b><i>${suit}</i></span>
         <input class="card-input" data-index="${index}" type="number" min="1" max="99" value="${escapeHtml(value)}" aria-label="Card ${index + 1}">
-      </div>`
-    )
+        <span class="card-corner bottom"><b>${escapeHtml(rank)}</b><i>${suit}</i></span>
+      </div>`;
+    })
     .join("");
   container.querySelectorAll(".card-input").forEach((input) => {
     input.addEventListener("change", () => {
@@ -144,6 +152,10 @@ function renderCards() {
       const value = Math.max(1, Math.min(99, Math.round(Number(input.value) || 1)));
       state.hand[index] = value;
       input.value = value;
+      const card = input.closest(".card");
+      card.querySelectorAll(".card-corner b").forEach((node) => {
+        node.textContent = pokerRank(value);
+      });
       scheduleAnalyze();
     });
     input.addEventListener("keydown", (event) => {
@@ -300,111 +312,484 @@ function expressionHint(steps) {
   return parts.join("");
 }
 
+const CARD_WIDTH = 70;
+const CARD_GAP = 10;
+const SUITS = ["♠", "♥", "♦", "♣", "♠", "♥"];
+const RED_SUITS = new Set(["♥", "♦"]);
+const OP_SYMBOL = { "+": "+", "-": "−", "*": "×", "/": "÷" };
+
+function pokerRank(value) {
+  const numeric = Number(value);
+  if (numeric === 1) return "A";
+  if (numeric === 11) return "J";
+  if (numeric === 12) return "Q";
+  if (numeric === 13) return "K";
+  if (numeric >= 2 && numeric <= 10) return String(numeric);
+  return String(value);
+}
+
+function stepKey(step) {
+  return `${step.left}|${step.op}|${step.right}|${step.result}`;
+}
+
+function commonPrefix(a, b) {
+  let index = 0;
+  while (index < a.length && index < b.length && stepKey(a[index]) === stepKey(b[index])) {
+    index += 1;
+  }
+  return index;
+}
+
+function buildCards(hand, steps) {
+  const cards = hand.map((value, index) => ({
+    id: `c${index}`,
+    value: String(value),
+    suit: SUITS[index % SUITS.length],
+    result: false,
+  }));
+  steps.forEach((step, index) => {
+    const leftIndex = cards.findIndex((card) => card.value === String(step.left));
+    let rightIndex = -1;
+    for (let cursor = 0; cursor < cards.length; cursor += 1) {
+      if (cursor !== leftIndex && cards[cursor].value === String(step.right)) {
+        rightIndex = cursor;
+        break;
+      }
+    }
+    if (leftIndex < 0 || rightIndex < 0) return;
+    const insertAt = Math.min(leftIndex, rightIndex);
+    for (const cursor of [leftIndex, rightIndex].sort((a, b) => b - a)) {
+      cards.splice(cursor, 1);
+    }
+    cards.splice(insertAt, 0, {
+      id: `r${index}`,
+      value: String(step.result),
+      suit: "",
+      result: true,
+    });
+  });
+  return cards;
+}
+
+function laneSteps(lane) {
+  if (lane.solution && Array.isArray(lane.solution.steps) && lane.solution.steps.length) {
+    return lane.solution.steps;
+  }
+  if (lane.kind !== "text" && Array.isArray(lane.live_steps)) {
+    return lane.live_steps;
+  }
+  return [];
+}
+
 function progressFor(lane, race) {
   if (!lane) return 0;
   if (lane.status === "waiting") return 0;
   if (lane.status === "solved") return 100;
   if (lane.status === "unsolved" || lane.status === "error") return 100;
   if (lane.kind === "text") return 55;
-  const stepsDone = lane.beam && lane.beam.length ? Math.max(...lane.beam.map((item) => item.history.length)) : 0;
+  const steps = laneSteps(lane);
   const total = Math.max(1, (race.config.hand.length || 6) - 1);
-  return Math.min(92, Math.max(10, (stepsDone / total) * 100));
+  return Math.min(92, Math.max(10, (steps.length / total) * 100));
 }
 
-function laneBody(lane, race) {
-  const chunks = [];
-  const error = lane.error || (lane.verification && !lane.verification.ok ? lane.verification.error : null);
-  if (error) chunks.push(`<div class="lane-error">${escapeHtml(error)}</div>`);
+function makeCardElement(card) {
+  const el = document.createElement("div");
+  el.className = "table-card";
+  el.dataset.id = card.id;
+  el.innerHTML =
+    '<span class="table-card-corner top"><b class="rank"></b><i class="suit"></i></span>' +
+    '<span class="table-card-watermark"></span>' +
+    '<span class="table-card-value"></span>' +
+    '<span class="table-card-corner bottom"><b class="rank"></b><i class="suit"></i></span>' +
+    '<span class="table-card-foot"></span>';
+  return el;
+}
 
-  const solution = lane.solution;
-  if (solution && solution.steps && solution.steps.length) {
-    chunks.push(
-      `<ol class="steps">${solution.steps
-        .map(
-          (step, index) =>
-            `<li><span class="step-index">${index + 1}</span><span>${escapeHtml(step.text)}</span></li>`
-        )
-        .join("")}</ol>`
-    );
-    if (solution.expression) {
-      chunks.push(
-        `<div class="expression"><span class="label">expr</span>${escapeHtml(solution.expression)} · verified</div>`
-      );
+function layoutCards(view, controller) {
+  const container = view.cardsEl;
+  const totalWidth =
+    controller.cards.length * CARD_WIDTH + Math.max(0, controller.cards.length - 1) * CARD_GAP;
+  const startX = (container.clientWidth - totalWidth) / 2;
+  controller.cards.forEach((card, index) => {
+    const el = controller.elements.get(card.id);
+    if (!el) return;
+    const tilt =
+      controller.cards.length > 1
+        ? (index - (controller.cards.length - 1) / 2) * 0.6
+        : 0;
+    el.style.transform = `translateX(${startX + index * (CARD_WIDTH + CARD_GAP)}px) rotate(${tilt}deg)`;
+  });
+}
+
+function renderCardElements(view, controller) {
+  const container = view.cardsEl;
+  const ids = new Set(controller.cards.map((card) => card.id));
+  for (const [id, el] of Array.from(controller.elements.entries())) {
+    if (!ids.has(id)) {
+      el.classList.add("leaving");
+      controller.elements.delete(id);
+      setTimeout(() => el.remove(), 240);
     }
-  } else if (lane.kind !== "text" && lane.beam && lane.beam.length) {
-    chunks.push(
-      `<div class="beam">${lane.beam
-        .slice(0, 4)
-        .map(
-          (item) =>
-            `<div class="beam-line"><b>[${escapeHtml(item.numbers.join(", "))}]</b> ${escapeHtml(
-              (item.history || []).slice(-2).join(" · ")
-            )}</div>`
-        )
-        .join("")}</div>`
-    );
-  } else if (lane.status === "running") {
-    chunks.push(`<div class="muted">${lane.kind === "text" ? "waiting for a complete JSON solution…" : "searching…"}</div>`);
   }
-
-  const trace = (lane.trace || []).slice(-3);
-  if (trace.length) {
-    chunks.push(
-      `<div class="trace">${trace
-        .map(
-          (item) =>
-            `<div class="trace-line"><span>${fmtTime(item.at)}</span> ${escapeHtml(item.message)}</div>`
-        )
-        .join("")}</div>`
-    );
+  for (const card of controller.cards) {
+    let el = controller.elements.get(card.id);
+    if (!el) {
+      el = makeCardElement(card);
+      controller.elements.set(card.id, el);
+      container.appendChild(el);
+      el.classList.add("appearing");
+      setTimeout(() => el.classList.remove("appearing"), 380);
+    }
+    const isTarget =
+      !!card.result && controller.cards.length === 1 && card.value === String(controller.target);
+    const ink = !!card.result ? "" : RED_SUITS.has(card.suit) ? "red" : "black";
+    el.classList.toggle("result", !!card.result);
+    el.classList.toggle("target", isTarget);
+    el.classList.toggle("red", ink === "red");
+    el.classList.toggle("black", ink === "black");
+    el.dataset.value = card.value;
+    el.querySelector(".table-card-value").textContent = card.value;
+    el.querySelector(".table-card-watermark").textContent = card.result ? "✦" : card.suit;
+    el.querySelectorAll(".table-card-corner .rank").forEach((node) => {
+      node.textContent = card.result ? "R" : pokerRank(card.value);
+    });
+    el.querySelectorAll(".table-card-corner .suit").forEach((node) => {
+      node.textContent = card.result ? "≡" : card.suit;
+    });
+    el.querySelector(".table-card-foot").textContent = isTarget
+      ? "TARGET"
+      : card.result
+        ? "RESULT"
+        : "";
   }
-  return chunks.join("");
+  layoutCards(view, controller);
 }
 
-function laneHtml(lane, race) {
+function resetCards(view, controller, steps) {
+  clearTimeout(controller.timeout);
+  clearTimeout(controller.equationTimeout);
+  controller.busy = false;
+  controller.queue = [];
+  controller.displayed = steps.slice();
+  controller.cards = buildCards(controller.hand, steps);
+  controller.elements.clear();
+  view.cardsEl.innerHTML = "";
+  view.equation.classList.remove("show");
+  renderCardElements(view, controller);
+}
+
+function animateStep(view, controller, step) {
+  const leftIndex = controller.cards.findIndex((card) => card.value === String(step.left));
+  let rightIndex = -1;
+  for (let cursor = 0; cursor < controller.cards.length; cursor += 1) {
+    if (cursor !== leftIndex && controller.cards[cursor].value === String(step.right)) {
+      rightIndex = cursor;
+      break;
+    }
+  }
+  if (leftIndex < 0 || rightIndex < 0) {
+    controller.displayed.push(step);
+    controller.cards = buildCards(controller.hand, controller.displayed);
+    controller.elements.clear();
+    view.cardsEl.innerHTML = "";
+    renderCardElements(view, controller);
+    controller.busy = false;
+    playQueue(view, controller);
+    return;
+  }
+
+  const leftCard = controller.cards[leftIndex];
+  const rightCard = controller.cards[rightIndex];
+  const leftEl = controller.elements.get(leftCard.id);
+  const rightEl = controller.elements.get(rightCard.id);
+  for (const el of [leftEl, rightEl]) {
+    if (!el) continue;
+    const base = el.style.transform || "translateX(0px)";
+    el.classList.add("merging");
+    el.style.transform = `${base} translateY(-7px) scale(1.045)`;
+  }
+  view.equation.textContent = `${step.left} ${OP_SYMBOL[step.op] || step.op} ${step.right} = ${step.result}`;
+  view.equation.classList.add("show");
+
+  controller.timeout = setTimeout(() => {
+    const insertAt = Math.min(leftIndex, rightIndex);
+    for (const cursor of [leftIndex, rightIndex].sort((a, b) => b - a)) {
+      controller.cards.splice(cursor, 1);
+    }
+    controller.cards.splice(insertAt, 0, {
+      id: `r${controller.displayed.length}`,
+      value: String(step.result),
+      suit: "",
+      result: true,
+    });
+    controller.displayed.push(step);
+    renderCardElements(view, controller);
+    controller.equationTimeout = setTimeout(() => {
+      view.equation.classList.remove("show");
+      controller.busy = false;
+      playQueue(view, controller);
+    }, 190);
+  }, 300);
+}
+
+function playQueue(view, controller) {
+  if (controller.busy || !controller.queue.length) return;
+  controller.busy = true;
+  animateStep(view, controller, controller.queue.shift());
+}
+
+function updateCardTable(view, lane) {
+  const controller = view.controller;
+  const target = laneSteps(lane);
+  const known = controller.displayed.concat(controller.queue);
+  const prefix = commonPrefix(known, target);
+
+  if (prefix < controller.displayed.length) {
+    resetCards(view, controller, target.slice(0, prefix));
+  } else if (prefix < known.length) {
+    controller.queue = controller.queue.slice(0, prefix - controller.displayed.length);
+  }
+
+  const expected = controller.displayed.length + controller.queue.length;
+  if (target.length > expected) {
+    controller.queue.push(...target.slice(expected));
+  }
+  view.cardTable.classList.toggle(
+    "thinking",
+    lane.status === "running" && target.length === 0 && controller.displayed.length === 0
+  );
+  playQueue(view, controller);
+}
+
+function createLaneView(kind, race) {
+  const article = document.createElement("article");
+  article.className = "lane";
+  article.dataset.kind = kind;
+  article.innerHTML = `
+    <div class="lane-head">
+      <div class="lane-title">
+        <span class="dot"></span>
+        <div>
+          <h3 data-model></h3>
+          <span class="provider" data-provider></span>
+        </div>
+      </div>
+      <span class="lane-status" data-status>waiting</span>
+    </div>
+    <div class="lane-stats">
+      <div class="lane-clock" data-clock>00:00.000</div>
+      <div class="lane-meta">
+        <span>calls <b data-calls>0</b></span>
+        <span>tokens <b data-tokens>0</b></span>
+        <span>cost <b data-cost>$0</b></span>
+      </div>
+    </div>
+    <div class="lane-bar" data-bar><span></span></div>
+    <div class="lane-body">
+      <div class="card-table" data-card-table>
+        <div class="card-table-cards" data-cards></div>
+        <div class="card-equation" data-equation></div>
+      </div>
+      <div class="lane-error" data-error hidden></div>
+      <ol class="steps" data-steps hidden></ol>
+      <div class="expression" data-expression hidden></div>
+      <div class="beam" data-beam hidden></div>
+      <div class="trace" data-trace></div>
+    </div>`;
+  return {
+    article,
+    model: article.querySelector("[data-model]"),
+    provider: article.querySelector("[data-provider]"),
+    status: article.querySelector("[data-status]"),
+    clock: article.querySelector("[data-clock]"),
+    calls: article.querySelector("[data-calls]"),
+    tokens: article.querySelector("[data-tokens]"),
+    cost: article.querySelector("[data-cost]"),
+    bar: article.querySelector("[data-bar]"),
+    barFill: article.querySelector("[data-bar] > span"),
+    cardTable: article.querySelector("[data-card-table]"),
+    cardsEl: article.querySelector("[data-cards]"),
+    equation: article.querySelector("[data-equation]"),
+    error: article.querySelector("[data-error]"),
+    steps: article.querySelector("[data-steps]"),
+    expression: article.querySelector("[data-expression]"),
+    beam: article.querySelector("[data-beam]"),
+    trace: article.querySelector("[data-trace]"),
+    controller: {
+      kind,
+      hand: (race.config.hand || []).slice(),
+      target: race.config.target,
+      cards: [],
+      displayed: [],
+      queue: [],
+      busy: false,
+      timeout: null,
+      equationTimeout: null,
+      elements: new Map(),
+    },
+  };
+}
+
+function updateLaneView(view, race, lane) {
   const status = lane.status || "waiting";
-  const winner = isDone(race) && race.winner === lane.kind;
   const solved = status === "solved";
   const statusClass = solved ? "solved" : status;
   const clockClass = solved ? "solved" : status === "unsolved" || status === "error" ? status : "";
-  const progress = progressFor(lane, race);
-  const tokens = lane.tokens?.total || 0;
-  return `
-    <article class="lane ${winner ? "winner" : ""}" data-kind="${escapeHtml(lane.kind)}" data-started-at="${escapeHtml(
-    lane.started_at || ""
-  )}" data-elapsed-ms="${lane.elapsed_ms ?? ""}">
-      <div class="lane-head">
-        <div class="lane-title">
-          <span class="dot"></span>
-          <div>
-            <h3 title="${escapeHtml(lane.model)}">${escapeHtml(lane.model)}</h3>
-            <span class="provider">${escapeHtml(lane.provider)}</span>
-          </div>
-        </div>
-        <span class="lane-status ${statusClass}">${escapeHtml(STATUS_LABEL[status] || status)}</span>
-      </div>
-      <div class="lane-stats">
-        <div class="lane-clock ${clockClass}" data-clock>${fmtClock(laneElapsed(lane))}</div>
-        <div class="lane-meta">
-          <span>calls <b>${lane.calls || 0}</b></span>
-          <span>tokens <b>${fmtTokens(tokens)}</b></span>
-          <span>cost <b>${fmtCost(lane.cost)}</b></span>
-        </div>
-      </div>
-      <div class="lane-bar ${status === "running" ? "running" : ""}"><span style="width:${progress}%"></span></div>
-      <div class="lane-body">${laneBody(lane, race)}</div>
-    </article>`;
+  const winner = isDone(race) && race.winner === lane.kind;
+
+  view.article.classList.toggle("winner", winner);
+  view.article.dataset.startedAt = lane.started_at || "";
+  view.article.dataset.elapsedMs = lane.elapsed_ms ?? "";
+  view.model.textContent = lane.model;
+  view.model.title = lane.model;
+  view.provider.textContent = lane.provider;
+  view.status.className = `lane-status ${statusClass}`;
+  view.status.textContent = STATUS_LABEL[status] || status;
+  view.clock.className = `lane-clock ${clockClass}`;
+  view.calls.textContent = lane.calls || 0;
+  view.tokens.textContent = fmtTokens(lane.tokens?.total || 0);
+  view.cost.textContent = fmtCost(lane.cost);
+
+  view.bar.classList.toggle("running", status === "running");
+  view.barFill.style.width = `${progressFor(lane, race)}%`;
+
+  const error = lane.error || (lane.verification && !lane.verification.ok ? lane.verification.error : null);
+  view.error.hidden = !error;
+  view.error.textContent = error || "";
+
+  const solution = lane.solution;
+  if (solution && solution.steps && solution.steps.length) {
+    view.steps.hidden = false;
+    view.steps.innerHTML = solution.steps
+      .map(
+        (step, index) =>
+          `<li><span class="step-index">${index + 1}</span><span>${escapeHtml(step.text)}</span></li>`
+      )
+      .join("");
+    view.expression.hidden = !solution.expression;
+    view.expression.innerHTML = solution.expression
+      ? `<span class="label">expr</span>${escapeHtml(solution.expression)} · verified`
+      : "";
+  } else {
+    view.steps.hidden = true;
+    view.steps.innerHTML = "";
+    view.expression.hidden = true;
+    view.expression.innerHTML = "";
+  }
+
+  if (!solution && lane.kind !== "text" && lane.beam && lane.beam.length) {
+    view.beam.hidden = false;
+    view.beam.innerHTML = lane.beam
+      .slice(0, 4)
+      .map(
+        (item) =>
+          `<div class="beam-line"><b>[${escapeHtml(item.numbers.join(", "))}]</b> ${escapeHtml(
+            (item.history || []).slice(-2).join(" · ")
+          )}</div>`
+      )
+      .join("");
+  } else {
+    view.beam.hidden = true;
+    view.beam.innerHTML = "";
+  }
+
+  const trace = (lane.trace || []).slice(-3);
+  view.trace.innerHTML = trace
+    .map(
+      (item) =>
+        `<div class="trace-line"><span>${fmtTime(item.at)}</span> ${escapeHtml(item.message)}</div>`
+    )
+    .join("");
+
+  updateCardTable(view, lane);
+}
+
+function mountLanes(race) {
+  const kinds = ["text", "decisions", "baseline"].filter((kind) => race.lanes[kind]);
+  const signature = `${race.id}:${kinds.join(",")}`;
+  if (signature === state.laneSignature) return;
+  state.laneSignature = signature;
+  state.laneViews = {};
+  const container = $("#lanes");
+  container.innerHTML = "";
+  for (const kind of kinds) {
+    const view = createLaneView(kind, race);
+    container.appendChild(view.article);
+    state.laneViews[kind] = view;
+    resetCards(view, view.controller, []);
+  }
+}
+
+function clearLanes() {
+  if (state.laneSignature === null) return;
+  state.laneSignature = null;
+  state.laneViews = {};
+  $("#lanes").innerHTML = `
+    <div class="empty-state">
+      <span class="eyebrow">No race yet</span>
+      <h2>Set the table, pick two models, start the race.</h2>
+      <p>The text lane asks Nam for a full solution. The decisions lane asks OpenRouter to rank moves; the harness searches with exact pruning and does the arithmetic.</p>
+    </div>`;
+}
+
+async function enterPresentation() {
+  document.body.classList.add("presentation");
+  if (!document.fullscreenElement) {
+    try {
+      await document.documentElement.requestFullscreen();
+    } catch (error) {
+      // CSS presentation still works when the fullscreen API is unavailable.
+    }
+  }
+}
+
+async function exitPresentation() {
+  if (document.fullscreenElement) {
+    try {
+      await document.exitFullscreen();
+    } catch (error) {
+      // ignore
+    }
+  }
+  document.body.classList.remove("presentation");
+}
+
+function togglePresentation() {
+  if (document.body.classList.contains("presentation")) {
+    exitPresentation();
+  } else {
+    enterPresentation();
+  }
+}
+
+function replayCards() {
+  const race = state.currentRace;
+  if (!race) return;
+  for (const [kind, view] of Object.entries(state.laneViews)) {
+    const lane = race.lanes[kind];
+    if (!lane) continue;
+    resetCards(view, view.controller, []);
+    updateLaneView(view, race, lane);
+  }
 }
 
 function renderRace() {
   const race = state.currentRace;
+  const replay = $("#replay");
+  if (replay) replay.disabled = !race;
+  const presentReplay = $("#present-replay");
+  if (presentReplay) presentReplay.disabled = !race;
   if (!race) {
     renderRaceHand();
+    clearLanes();
     return;
   }
   renderRaceHand();
-  const lanes = ["text", "decisions", "baseline"].map((kind) => race.lanes[kind]).filter(Boolean);
-  $("#lanes").innerHTML = lanes.map((lane) => laneHtml(lane, race)).join("");
+  mountLanes(race);
+  for (const [kind, view] of Object.entries(state.laneViews)) {
+    const lane = race.lanes[kind];
+    if (lane) updateLaneView(view, race, lane);
+  }
   renderCompare(race);
   renderEventLog(race);
   updateClocks();
@@ -562,6 +947,8 @@ function setRunningState(running) {
   $("#cancel").disabled = !running;
   $("#deal-solvable").disabled = running;
   $("#podcast").disabled = running;
+  const presentStart = $("#present-start");
+  if (presentStart) presentStart.disabled = running;
 }
 
 async function startRace() {
@@ -696,12 +1083,41 @@ async function init() {
   renderCards();
   renderRaceHand();
   setInterval(updateClocks, 60);
+  window.addEventListener("resize", () => {
+    for (const view of Object.values(state.laneViews)) {
+      layoutCards(view, view.controller);
+    }
+  });
 
   $("#deal-solvable").addEventListener("click", () => dealHand(true));
   $("#podcast").addEventListener("click", podcastHand);
   $("#start").addEventListener("click", startRace);
   $("#cancel").addEventListener("click", cancelRace);
+  $("#replay").addEventListener("click", replayCards);
+  $("#present").addEventListener("click", enterPresentation);
+  $("#present-start").addEventListener("click", startRace);
+  $("#present-replay").addEventListener("click", replayCards);
+  $("#present-fullscreen").addEventListener("click", enterPresentation);
+  $("#present-exit").addEventListener("click", exitPresentation);
   $("#refresh-history").addEventListener("click", loadHistory);
+  document.addEventListener("fullscreenchange", () => {
+    if (!document.fullscreenElement) document.body.classList.remove("presentation");
+  });
+  document.addEventListener("keydown", (event) => {
+    const tag = event.target?.tagName || "";
+    if (["INPUT", "SELECT", "TEXTAREA"].includes(tag) || event.target?.isContentEditable) return;
+    if (event.key === "f" || event.key === "F") {
+      event.preventDefault();
+      togglePresentation();
+    }
+    if (
+      event.key === "Escape" &&
+      document.body.classList.contains("presentation") &&
+      !document.fullscreenElement
+    ) {
+      exitPresentation();
+    }
+  });
   $("#target").addEventListener("input", () => {
     state.target = Math.max(1, Math.round(Number($("#target").value) || 1));
     scheduleAnalyze();
@@ -720,7 +1136,9 @@ async function init() {
     renderDataset(data);
     analyze();
     loadHistory();
-    const raceId = new URLSearchParams(window.location.search).get("race");
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("present") === "1") document.body.classList.add("presentation");
+    const raceId = params.get("race");
     if (raceId) await openRace(raceId);
   } catch (error) {
     showToast(`Could not load bootstrap: ${error.message}`, true);

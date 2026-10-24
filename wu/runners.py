@@ -348,10 +348,14 @@ async def run_decisions_lane(
             }
             for item in reversed(path)
         ][:6]
+        lane["live_steps"] = (
+            [step.to_dict() for step in path[-1]["history"]] if path else []
+        )
 
     lane["beam"] = [
         {"numbers": [json_number(v) for v in initial_values], "history": [], "score": 0.0}
     ]
+    lane["live_steps"] = []
 
     if _state_is_solved(initial_values, target, config.rules):
         verification = verify_steps(config.hand, config.target, [], config.rules, require_result=True)
