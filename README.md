@@ -26,6 +26,7 @@ The control center checks both keys on load. If the OpenRouter key is missing or
 - A lane wins only when its solution passes the verifier.
 - The clock stops at the first verified solution.
 - The UI shows each lane's steps, final expression, calls, tokens, cost, live search path, and trace.
+- Each lane has an animated poker-table view: cards lift and merge with an equation chip, results become foil cards, and the final target card turns green. The **Replay cards** button re-runs the animation on a completed race.
 - Exact request/response payloads are saved to `results/races/<id>.json`; the polling API strips them to keep the UI light.
 - Optional **baseline lane** uses the same guided search and pruning with a solver-free heuristic instead of a model, isolating what the model's ordering adds.
 
@@ -51,6 +52,17 @@ The decisions lane implements **framing 1** from the plan with a reliability lay
 The harness performs all arithmetic and pruning; the model controls move ordering. Results are **model + harness**, not the model alone. The lane reports expansions, pruned moves and solver checks so the model's ordering contribution is visible.
 
 The text lane is the **one-shot full answer** variant: one JSON solution per attempt. It defaults to two attempts and an 8,192-token completion budget so reasoning models have room for both their reasoning and the JSON answer. Retries count toward elapsed time and are reported. If the final content is empty, the runner also tries to extract JSON from the reasoning trace.
+
+## Presentation / recording mode
+
+Click **Present** in the top bar, press **F**, or open the control center with `?present=1` (append `&race=<id>` to replay a saved race).
+
+- Hides the setup sidebar, event log, archive and comparison panel.
+- Enlarges the race header, clocks and poker-card tables; the two lanes fit a 1920×1080 canvas, with a compact scale for 900p/720p.
+- The slim top bar keeps **Start race**, **Replay cards**, **Fullscreen** and **Exit** available.
+- **Fullscreen** requests the browser Fullscreen API; **Esc**, **F** or **Exit** returns.
+
+For OBS or a browser source, use `http://127.0.0.1:8000/?present=1` and press Fullscreen once.
 
 ## CLI
 

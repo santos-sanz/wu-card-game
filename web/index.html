@@ -7,6 +7,19 @@
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
+  <div class="presentation-chrome" id="presentation-chrome">
+    <div class="present-brand">
+      <span class="brand-mark">WU</span>
+      <div><strong>Race Control</strong><span>Presentation</span></div>
+    </div>
+    <div class="present-actions">
+      <button id="present-start" class="ghost small">Start race</button>
+      <button id="present-replay" class="ghost small" disabled>Replay cards</button>
+      <button id="present-fullscreen" class="ghost small">Fullscreen</button>
+      <button id="present-exit" class="ghost small">Exit</button>
+    </div>
+  </div>
+
   <div class="app">
     <header class="topbar">
       <div class="brand">
@@ -26,6 +39,7 @@
           <div><strong>OpenRouter</strong><span>checking…</span></div>
         </div>
         <div class="dataset-status" id="dataset-status">dataset · 0 hands</div>
+        <button id="present" class="ghost small" title="Presentation mode (F)">Present</button>
       </div>
     </header>
 
@@ -118,7 +132,10 @@
             <span class="eyebrow">Current race</span>
             <div class="race-hand" id="race-hand">2 · 8 · 9 · 3 · 12 · 12 → 163</div>
           </div>
-          <div class="race-clock" id="race-clock" data-started-at="" data-elapsed-ms="">00:00.000</div>
+          <div class="race-head-right">
+            <button id="replay" class="ghost small" disabled>Replay cards</button>
+            <div class="race-clock" id="race-clock" data-started-at="" data-elapsed-ms="">00:00.000</div>
+          </div>
         </div>
 
         <div class="lanes" id="lanes">

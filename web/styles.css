@@ -202,38 +202,79 @@ h1, h2, h3, p { margin: 0; }
   display: flex;
   align-items: center;
   justify-content: center;
-  aspect-ratio: 0.72;
-  border: 1px solid #343b47;
+  aspect-ratio: 0.7;
+  border: 1px solid rgba(60, 48, 30, 0.32);
   border-radius: 8px;
   background:
-    linear-gradient(150deg, rgba(255,255,255,0.055), transparent 45%),
-    #f2f0ea;
-  color: #14171c;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.65);
+    radial-gradient(circle at 30% 16%, rgba(255, 255, 255, 0.95), transparent 34%),
+    repeating-linear-gradient(0deg, rgba(90, 70, 40, 0.018) 0 1px, transparent 1px 3px),
+    linear-gradient(145deg, #fffdf6, #f2ecdf 58%, #e7dfcf);
+  color: #16181d;
+  box-shadow:
+    0 7px 14px rgba(0, 0, 0, 0.32),
+    0 1px 2px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
   overflow: hidden;
 }
-.card::before, .card::after {
+.card::before {
   content: "";
   position: absolute;
-  width: 5px; height: 5px;
-  border-radius: 50%;
-  background: rgba(20, 23, 28, 0.16);
-  top: 6px;
+  inset: 4px;
+  border: 1px solid rgba(80, 60, 30, 0.13);
+  border-radius: 6px;
+  pointer-events: none;
 }
-.card::before { left: 6px; }
-.card::after { right: 6px; }
+.card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(125deg, rgba(255, 255, 255, 0.38), transparent 38%, transparent 72%, rgba(0, 0, 0, 0.035));
+  pointer-events: none;
+}
+.card.red .card-corner,
+.card.red .card-watermark { color: #b11f2b; }
+.card.black .card-corner,
+.card.black .card-watermark { color: #17191d; }
+
+.card-watermark {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 31px;
+  line-height: 1;
+  opacity: 0.11;
+  pointer-events: none;
+}
+.card-corner {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  line-height: 0.92;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  pointer-events: none;
+  z-index: 2;
+}
+.card-corner.top { top: 4px; left: 5px; }
+.card-corner.bottom { bottom: 4px; right: 5px; transform: rotate(180deg); }
+.card-corner b { font-size: 8px; font-weight: 700; letter-spacing: -0.02em; }
+.card-corner i { font-size: 7px; font-style: normal; line-height: 1; }
 
 .card-input {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   border: 0;
   background: transparent;
-  color: inherit;
+  color: #16181d;
   text-align: center;
   font-family: var(--mono);
-  font-size: 21px;
-  font-weight: 700;
-  letter-spacing: -0.05em;
+  font-size: 20px;
+  font-weight: 750;
+  letter-spacing: -0.06em;
   outline: none;
   -moz-appearance: textfield;
   appearance: textfield;
@@ -390,6 +431,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   font-weight: 650;
   letter-spacing: -0.02em;
 }
+.race-head-right { display: flex; align-items: center; gap: 14px; }
 .race-clock {
   font-family: var(--mono);
   font-size: clamp(24px, 3.1vw, 38px);
@@ -502,6 +544,278 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .lane-body { margin-top: 12px; display: grid; gap: 10px; }
 .lane-error { color: var(--red); font-size: 11px; line-height: 1.55; background: var(--red-soft); border: 1px solid rgba(255,95,122,0.2); border-radius: 8px; padding: 8px 10px; }
+
+/* ---------- real-time poker table ---------- */
+
+.card-table {
+  position: relative;
+  padding: 4px 10px 8px;
+  border-radius: 14px;
+  background:
+    radial-gradient(ellipse at 50% -12%, rgba(255, 255, 255, 0.075), transparent 55%),
+    radial-gradient(ellipse at 50% 125%, rgba(0, 0, 0, 0.66), transparent 64%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px),
+    #0a2921;
+  border: 1px solid rgba(245, 165, 36, 0.18);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.38),
+    inset 0 0 72px rgba(0, 0, 0, 0.56),
+    0 14px 30px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+.card-table::before {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border-radius: 10px;
+  border: 1px solid rgba(245, 165, 36, 0.09);
+  pointer-events: none;
+}
+.card-table::after {
+  content: "";
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  top: 50%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.055), transparent);
+  pointer-events: none;
+}
+.card-table-cards {
+  position: relative;
+  height: 148px;
+  width: 100%;
+  max-width: 620px;
+  margin: 0 auto;
+}
+
+.table-card {
+  position: absolute;
+  top: 38px;
+  left: 0;
+  width: 70px;
+  height: 100px;
+  border-radius: 10px;
+  border: 1px solid rgba(60, 48, 30, 0.32);
+  background:
+    radial-gradient(circle at 30% 16%, rgba(255, 255, 255, 0.96), transparent 34%),
+    repeating-linear-gradient(0deg, rgba(90, 70, 40, 0.018) 0 1px, transparent 1px 3px),
+    linear-gradient(145deg, #fffdf6, #f2ecdf 57%, #e6dece);
+  color: #16181d;
+  box-shadow:
+    0 13px 24px rgba(0, 0, 0, 0.4),
+    0 2px 4px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.18s ease, box-shadow 0.18s ease;
+  will-change: transform;
+  overflow: hidden;
+  z-index: 2;
+}
+.table-card::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border: 1px solid rgba(80, 60, 30, 0.13);
+  border-radius: 7px;
+  pointer-events: none;
+  z-index: 1;
+}
+.table-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(125deg, rgba(255, 255, 255, 0.42), transparent 38%, transparent 72%, rgba(0, 0, 0, 0.04));
+  pointer-events: none;
+  z-index: 1;
+}
+
+.table-card.red .table-card-corner,
+.table-card.red .table-card-watermark { color: #b11f2b; }
+.table-card.black .table-card-corner,
+.table-card.black .table-card-watermark { color: #17191d; }
+
+.table-card-watermark {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 58px;
+  line-height: 1;
+  opacity: 0.1;
+  pointer-events: none;
+  z-index: 0;
+}
+.table-card-value {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--mono);
+  font-size: 30px;
+  font-weight: 780;
+  letter-spacing: -0.08em;
+  color: #16181d;
+  z-index: 2;
+}
+.table-card-corner {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  line-height: 0.92;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  pointer-events: none;
+  z-index: 3;
+}
+.table-card-corner.top { top: 6px; left: 7px; }
+.table-card-corner.bottom { bottom: 6px; right: 7px; transform: rotate(180deg); }
+.table-card-corner .rank { font-size: 15px; font-weight: 700; letter-spacing: -0.03em; }
+.table-card-corner .suit { font-size: 13px; font-style: normal; line-height: 1; }
+.table-card-foot {
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  font-size: 7px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: currentColor;
+  opacity: 0.55;
+  white-space: nowrap;
+  z-index: 3;
+}
+
+.table-card.result {
+  background:
+    radial-gradient(circle at 30% 16%, rgba(58, 215, 245, 0.2), transparent 38%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 3px),
+    linear-gradient(145deg, #102028, #0b1419 58%, #071014);
+  color: var(--cyan);
+  border-color: rgba(58, 215, 245, 0.5);
+  box-shadow:
+    0 0 0 1px rgba(58, 215, 245, 0.14),
+    0 13px 24px rgba(0, 0, 0, 0.42),
+    inset 0 0 26px rgba(58, 215, 245, 0.07);
+}
+.table-card.result::before { border-color: rgba(255, 255, 255, 0.09); }
+.table-card.result::after {
+  background: linear-gradient(125deg, rgba(255, 255, 255, 0.16), transparent 36%, transparent 72%, rgba(0, 0, 0, 0.12));
+}
+.table-card.result .table-card-value { color: currentColor; }
+.table-card.result .table-card-foot { color: currentColor; opacity: 0.6; }
+
+.lane[data-kind="text"] .table-card.result {
+  background:
+    radial-gradient(circle at 30% 16%, rgba(245, 165, 36, 0.22), transparent 38%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 3px),
+    linear-gradient(145deg, #211a0e, #151006 58%, #0e0a04);
+  color: var(--amber);
+  border-color: rgba(245, 165, 36, 0.5);
+  box-shadow:
+    0 0 0 1px rgba(245, 165, 36, 0.14),
+    0 13px 24px rgba(0, 0, 0, 0.42),
+    inset 0 0 26px rgba(245, 165, 36, 0.07);
+}
+.lane[data-kind="baseline"] .table-card.result {
+  background:
+    radial-gradient(circle at 30% 16%, rgba(155, 140, 255, 0.22), transparent 38%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 3px),
+    linear-gradient(145deg, #1b1728, #110e1a 58%, #0a0810);
+  color: var(--violet);
+  border-color: rgba(155, 140, 255, 0.5);
+  box-shadow:
+    0 0 0 1px rgba(155, 140, 255, 0.14),
+    0 13px 24px rgba(0, 0, 0, 0.42),
+    inset 0 0 26px rgba(155, 140, 255, 0.07);
+}
+
+.lane[data-kind] .table-card.target {
+  background:
+    radial-gradient(circle at 30% 16%, rgba(55, 211, 154, 0.24), transparent 38%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 3px),
+    linear-gradient(145deg, #0f2018, #08140e 58%, #050d09);
+  color: var(--green);
+  border-color: rgba(55, 211, 154, 0.72);
+  box-shadow:
+    0 0 0 1px rgba(55, 211, 154, 0.24),
+    0 0 34px rgba(55, 211, 154, 0.2),
+    0 13px 24px rgba(0, 0, 0, 0.42),
+    inset 0 0 26px rgba(55, 211, 154, 0.08);
+}
+.lane[data-kind] .table-card.target::before { border-color: rgba(55, 211, 154, 0.22); }
+
+.table-card.appearing { animation: card-appear 0.34s cubic-bezier(0.2, 0.9, 0.2, 1) both; }
+.table-card.leaving { opacity: 0; pointer-events: none; }
+.table-card.merging { z-index: 6; }
+.lane[data-kind="text"] .table-card.merging { box-shadow: 0 0 0 2px rgba(245, 165, 36, 0.55), 0 0 28px rgba(245, 165, 36, 0.26), 0 16px 26px rgba(0, 0, 0, 0.4); }
+.lane[data-kind="decisions"] .table-card.merging { box-shadow: 0 0 0 2px rgba(58, 215, 245, 0.55), 0 0 28px rgba(58, 215, 245, 0.26), 0 16px 26px rgba(0, 0, 0, 0.4); }
+.lane[data-kind="baseline"] .table-card.merging { box-shadow: 0 0 0 2px rgba(155, 140, 255, 0.55), 0 0 28px rgba(155, 140, 255, 0.22), 0 16px 26px rgba(0, 0, 0, 0.4); }
+
+@keyframes card-appear {
+  from { opacity: 0; filter: blur(2px); }
+  to { opacity: 1; filter: none; }
+}
+
+.card-table.thinking .table-card {
+  animation: card-breathe 1.8s ease-in-out infinite;
+}
+@keyframes card-breathe {
+  0%, 100% {
+    box-shadow:
+      0 13px 24px rgba(0, 0, 0, 0.4),
+      0 2px 4px rgba(0, 0, 0, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  }
+  50% {
+    box-shadow:
+      0 0 24px rgba(245, 165, 36, 0.22),
+      0 13px 24px rgba(0, 0, 0, 0.4),
+      0 2px 4px rgba(0, 0, 0, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  }
+}
+.lane[data-kind="decisions"] .card-table.thinking .table-card {
+  animation-name: card-breathe-cyan;
+}
+@keyframes card-breathe-cyan {
+  0%, 100% {
+    box-shadow:
+      0 13px 24px rgba(0, 0, 0, 0.4),
+      0 2px 4px rgba(0, 0, 0, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  }
+  50% {
+    box-shadow:
+      0 0 24px rgba(58, 215, 245, 0.24),
+      0 13px 24px rgba(0, 0, 0, 0.4),
+      0 2px 4px rgba(0, 0, 0, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  }
+}
+
+.card-equation {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translate(-50%, -5px);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 10;
+  padding: 5px 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(245, 165, 36, 0.28);
+  background: linear-gradient(180deg, rgba(23, 27, 34, 0.97), rgba(8, 9, 11, 0.97));
+  color: #f3dbb0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.46), inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+.card-equation.show { opacity: 1; transform: translate(-50%, 0); }
 
 .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
 .steps li {
@@ -664,9 +978,156 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   .app { padding: 14px 12px 32px; }
   .cards { gap: 4px; }
   .card-input { font-size: 17px; }
+  .card-table { padding-top: 14px; }
+  .card-table-cards { height: 114px; transform: scale(0.78); transform-origin: top center; }
   .race-head { flex-direction: column; align-items: flex-start; }
+  .race-head-right { width: 100%; justify-content: space-between; }
   .race-clock { font-size: 28px; }
   .mini-grid { grid-template-columns: repeat(2, 1fr); }
   .compare-row { grid-template-columns: 70px 1fr 54px; }
   .lane-title h3 { max-width: 150px; }
+}
+
+@media (max-width: 400px) {
+  .card-table-cards { height: 98px; transform: scale(0.62); }
+}
+
+/* ---------- presentation / recording mode ---------- */
+
+.presentation-chrome { display: none; }
+
+body.presentation {
+  background:
+    radial-gradient(1100px 620px at 50% -12%, rgba(58, 215, 245, 0.08), transparent 62%),
+    radial-gradient(900px 520px at 50% 118%, rgba(245, 165, 36, 0.06), transparent 60%),
+    #060708;
+}
+
+body.presentation .topbar,
+body.presentation .sidebar,
+body.presentation .lower { display: none; }
+
+body.presentation .app {
+  max-width: none;
+  padding: 76px clamp(16px, 2.2vw, 48px) 26px;
+}
+body.presentation .layout { display: block; padding-top: 0; }
+body.presentation .arena { max-width: 1520px; margin: 0 auto; gap: 12px; }
+
+body.presentation .presentation-chrome {
+  display: flex;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  height: 60px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0 clamp(16px, 2vw, 32px);
+  background: rgba(8, 9, 11, 0.86);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(16px);
+}
+.present-brand { display: flex; align-items: center; gap: 10px; }
+.present-brand .brand-mark { width: 34px; height: 34px; font-size: 13px; border-radius: 9px; box-shadow: none; }
+.present-brand strong { display: block; font-size: 13px; font-weight: 650; letter-spacing: -0.01em; }
+.present-brand span { display: block; color: var(--muted); font-size: 10px; margin-top: 1px; }
+.present-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.presentation-chrome .ghost { background: rgba(23, 27, 34, 0.72); }
+
+body.presentation .race-head { padding: 15px 24px; border-radius: 20px; }
+body.presentation .race-hand { font-size: clamp(24px, 2.6vw, 40px); }
+body.presentation .race-clock { font-size: clamp(36px, 4.2vw, 64px); }
+body.presentation #replay { display: none; }
+
+body.presentation .lane {
+  padding: 16px 22px 16px 26px;
+  border-radius: 20px;
+}
+body.presentation .lane-title h3 { font-size: 16px; max-width: none; }
+body.presentation .provider { font-size: 10px; }
+body.presentation .lane-status { font-size: 10px; padding: 6px 10px; }
+body.presentation .lane-clock { font-size: 30px; }
+body.presentation .lane-meta { font-size: 11px; gap: 16px; }
+body.presentation .lane-bar { height: 4px; margin-top: 13px; }
+body.presentation .lane-body { gap: 9px; }
+
+body.presentation .card-table {
+  padding: 10px 18px 12px;
+  border-radius: 18px;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.38),
+    inset 0 0 90px rgba(0, 0, 0, 0.55),
+    0 18px 36px rgba(0, 0, 0, 0.24);
+}
+body.presentation .card-table::before { inset: 10px; border-radius: 13px; }
+body.presentation .card-table-cards {
+  max-width: 760px;
+  height: 200px;
+  transform: scale(1.18);
+  transform-origin: top center;
+}
+body.presentation .card-equation { top: 10px; font-size: 13px; padding: 6px 16px; }
+
+body.presentation .steps,
+body.presentation .trace,
+body.presentation .beam { display: none; }
+body.presentation .expression { font-size: 13px; padding: 10px 14px; }
+body.presentation .lane-error { font-size: 12px; padding: 10px 12px; }
+
+body.presentation .compare { display: none; }
+
+body.presentation .empty-state { padding: 70px 34px; }
+body.presentation .empty-state h2 { font-size: 24px; }
+
+body.presentation .toast { bottom: 26px; }
+
+@media (max-width: 1000px) {
+  body.presentation .arena { max-width: none; }
+  body.presentation .card-table-cards { transform: scale(1.02); height: 180px; }
+  body.presentation .race-clock { font-size: 42px; }
+}
+
+@media (max-width: 700px) {
+  body.presentation .app { padding: 74px 12px 20px; }
+  body.presentation .race-head { padding: 14px 16px; }
+  body.presentation .lane { padding: 14px 14px 14px 18px; }
+  body.presentation .lane-clock { font-size: 26px; }
+  body.presentation .card-table { padding-top: 12px; }
+  body.presentation .card-table-cards { transform: scale(0.82); height: 165px; }
+}
+
+@media (max-width: 520px) {
+  .presentation-chrome { height: auto; padding: 8px 12px; flex-wrap: wrap; }
+  .present-actions { width: 100%; justify-content: flex-end; }
+  body.presentation .app { padding-top: 112px; }
+  body.presentation .card-table { padding-top: 14px; }
+  body.presentation .card-table-cards { transform: scale(0.66); height: 145px; }
+  body.presentation .race-hand { font-size: 20px; }
+  body.presentation .race-clock { font-size: 32px; }
+  body.presentation .compare-row { grid-template-columns: 76px 1fr 60px; }
+}
+
+@media (max-width: 420px) {
+  body.presentation .card-table-cards { transform: scale(0.58); height: 138px; }
+}
+
+/* Compact recording view for shorter canvases (720p/900p). */
+@media (max-height: 1000px) and (min-width: 1001px) {
+  body.presentation .app { padding-top: 68px; padding-bottom: 16px; }
+  body.presentation .race-head { padding: 12px 20px; }
+  body.presentation .race-clock { font-size: 44px; }
+  body.presentation .lane { padding: 12px 20px 12px 24px; }
+  body.presentation .lane-clock { font-size: 26px; }
+  body.presentation .lane-body { gap: 7px; }
+  body.presentation .card-table { padding: 6px 14px 8px; }
+  body.presentation .card-table-cards { transform: scale(0.96); height: 168px; }
+  body.presentation .expression { font-size: 12px; padding: 8px 12px; }
+}
+
+@media (max-height: 820px) {
+  body.presentation .expression { display: none; }
+  body.presentation .card-table-cards { transform: scale(0.84); height: 148px; }
 }
